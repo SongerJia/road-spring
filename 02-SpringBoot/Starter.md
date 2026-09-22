@@ -1,217 +1,211 @@
-## 启动流程
-SpringBoot是什么->启动入口->run()->启动流程详解->和Spring启动区别->面试高频题
-### Spring Boot是什么
-Spring Boot：简化Spring开发的框架，核心是约定大于配置，自动配置+starter。
-解决什么问题
+## Starter机制
+Starter是什么->常用starter->starter原理->自定义starter->面试高频题
+### Starter是什么
+Starter：把某个功能的依赖和自动配置打包成一个开箱即用的模块，加一个依赖，功能就自动可用。
 ```
-// 传统 Spring 的痛点：
-// ① 大量 XML 配置（数据源、事务、MVC...）
-// ② 依赖版本冲突（jar 兼容）
-// ③ 部署复杂（要装 Tomcat）
+<!-- 加 Web starter → MVC + Tomcat + Jackson 自动配置好 -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
 
-// Spring Boot 解决：
-// ① 自动配置（不用写配置）
-// ② starter 统一依赖管理
-// ③ 内嵌容器（java -jar 直接跑）
+<!-- 加 Redis starter → RedisTemplate 自动创建 -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
 ```
-### 启动入口
+starter解决了什么
 ```
-@SpringBootApplication  // 组合注解！
-public class JudgeApplication {
-    public static void main(String[] args) {
-        // 启动入口
-        SpringApplication.run(JudgeApplication.class, args);
+// ① 依赖版本管理：不用自己协调版本（父 POM 统一）
+// ② 自动配置：不用写配置类
+// ③ 开箱即用：加依赖就可用
+// ④ 减少配置错误
+```
+### 常用的starter
+```
+//web相关
+spring-boot-starter-web          <!-- MVC + Tomcat -->
+spring-boot-starter-webflux      <!-- 响应式 -->
+spring-boot-starter-websocket    <!-- WebSocket -->
+
+//数据相关
+spring-boot-starter-data-redis   <!-- Redis -->
+spring-boot-starter-data-jpa     <!-- JPA -->
+spring-boot-starter-jdbc         <!-- JDBC -->
+spring-boot-starter-validation   <!-- 参数校验 -->
+
+//其他
+spring-boot-starter-security     <!-- 安全 -->
+spring-boot-starter-actuator     <!-- 监控 -->
+spring-boot-starter-test         <!-- 测试 -->
+spring-boot-starter-logging      <!-- 日志 -->
+spring-boot-starter-aop          <!-- AOP -->
+spring-boot-starter-mail         <!-- 邮件 -->
+```
+starter命名规则
+```
+// Spring 官方：spring-boot-starter-xxx
+// 第三方：xxx-spring-boot-starter（如 mybatis-spring-boot-starter）
+```
+### starter原理
+一个starter结构
+```
+// spring-boot-starter-data-redis 包含：
+// ① 依赖：redis 客户端（Lettuce）
+// ② 自动配置：RedisAutoConfiguration
+// ③ 配置属性：RedisProperties
+// ④ 注册文件：AutoConfiguration.imports（列出自动配置类）
+```
+核心流程
+```
+加依赖（starter）
+    ↓
+classpath 有了 Redis 相关类
+    ↓
+@EnableAutoConfiguration 读取 AutoConfiguration.imports
+    ↓
+找到 RedisAutoConfiguration
+    ↓
+@ConditionalOnClass(RedisOperations) 满足（有类）
+    ↓
+创建 RedisTemplate 等 Bean
+    ↓
+自动配置完成 ✅
+```
+starter=依赖+自动配置类+注册文件
+```
+starter 包结构：
+src/main/resources/META-INF/spring/
+    └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
+        （列出所有自动配置类，一行一个）
+```
+### 自定义starter
+需求：做一个 短信发送 Starter
+项目结构
+```
+sms-spring-boot-starter/
+├── pom.xml
+└── src/main/java/com/example/sms/
+    ├── SmsSender.java              （核心类）
+    ├── SmsProperties.java          （配置属性）
+    ├── SmsAutoConfiguration.java   （自动配置类）
+    └── resources/META-INF/spring/
+        └── AutoConfiguration.imports
+```
+核心类
+```
+// SmsSender：核心功能
+public class SmsSender {
+    private final String accessKey;
+    private final String secretKey;
+
+    public SmsSender(String accessKey, String secretKey) {
+        this.accessKey = accessKey;
+        this.secretKey = secretKey;
     }
-}
-```
-@SpringBootApplication是什么
-```
-// @SpringBootApplication = 三个注解的组合：
-// ① @SpringBootConfiguration   —— 配置类（内含 @Configuration）
-// ② @EnableAutoConfiguration    —— 开启自动配置（核心！）
-// ③ @ComponentScan              —— 包扫描（扫描本类所在包及子包）
 
-// 注意：
-// 主类要放在包的根目录（保证扫描范围正确）
-```
-SpringApplicaiton.run()做了什么
-```
-public static ConfigurableApplicationContext run(Class<?> primarySource, String... args) {
-    return new SpringApplication(primarySource).run(args);
-}
-
-两步
-// ① new SpringApplication()：初始化
-// ② run()：启动流程
-```
-### 启动流程详解
-run()的完整流程
-```
-public ConfigurableApplicationContext run(String... args) {
-
-    // ① 启动计时器（记录启动耗时）
-    StopWatch stopWatch = new StopWatch();
-    stopWatch.start();
-
-    // ② 引导上下文（创建 BootstrapContext）
-    DefaultBootstrapContext bootstrapContext = createBootstrapContext();
-
-    // ③ 设置应用上下文类型（Servlet/Reactive）
-    // 根据 classpath 判断：Web 应用 / WebFlux / 普通
-
-    // ④ 加载 ApplicationContextInitializer（初始化器）
-    // 从 spring.factories 加载
-
-    // ⑤ 加载 ApplicationListener（应用监听器）
-    // 从 spring.factories 加载
-
-    // ⑥ 找出主类（main 方法所在类）
-    // 从栈信息推断
-
-    // ⑦ 启动环境准备
-    ConfigurableEnvironment environment = prepareEnvironment(...);
-    // 加载 application.yml、系统属性、环境变量
-    // 启动配置日志（版本 banner 等）
-
-    // ⑧ 打印 Banner（启动图案）
-
-    // ⑨ 创建 ApplicationContext（上下文）
-    context = createApplicationContext();
-    // AnnotationConfigServletWebServerApplicationContext（Web）
-    // 或 AnnotationConfigApplicationContext（普通）
-
-    // ⑩ 准备上下文
-    prepareContext(bootstrapContext, context, environment, ...);
-    // ① 注册 BeanNameGenerator
-    // ② 应用初始化器（ApplicationContextInitializer）
-    // ③ 注册主类（作为 Bean）
-    // ④ 加载资源（主类所在包的 BeanDefinition）
-    // ⑤ 发布 ApplicationPreparedEvent
-
-    // ⑪ 刷新上下文 ★ 核心！
-    refreshContext(context);
-    // 调用 Spring 的 refresh() 方法（前面挖过 12 步）
-    // 实例化所有单例 Bean
-
-    // ⑫ 刷新后处理
-    afterRefresh(context, applicationArguments);
-    // 调用 CommandLineRunner / ApplicationRunner
-
-    // ⑬ 停止计时，打印启动耗时
-    stopWatch.stop();
-
-    // ⑭ 发布 ApplicationReadyEvent（启动完成事件）
-    // 此时应用可以接收请求了
-
-    return context;
-}
-
-① 准备环境（加载配置）
-② 创建上下文（ApplicationContext）
-③ 准备上下文（初始化器、主类）
-④ 刷新上下文（= Spring refresh 12 步）★
-⑤ 执行 Runner（CommandLineRunner）
-⑥ 发布就绪事件（启动完成）
-```
-### refreshContext之后
-刷新上下文
-```
-// refreshContext 调用的是 Spring 的 refresh()（12 步）
-// 但 Spring Boot 通过子类增强了它：
-// ① 自动配置在 invokeBeanFactoryPostProcessors 阶段加载
-// ② 内嵌 Web 容器在 onRefresh() 阶段启动（Tomcat）
-// ③ WebServerStartStopLifecycle 管理容器生命周期
-```
-Runner（启动后执行）
-```
-// 应用启动完成后要执行的逻辑：
-
-// 方式一：CommandLineRunner（原始参数）
-@Component
-public class StartupRunner implements CommandLineRunner {
-    @Override
-    public void run(String... args) {
-        // 缓存预热、初始化数据
-        System.out.println("启动完成，预热缓存...");
+    public void send(String phone, String content) {
+        System.out.println("发送短信到 " + phone + ": " + content);
     }
 }
 
-// 方式二：ApplicationRunner（封装参数）
-@Component
-public class StartupRunner2 implements ApplicationRunner {
-    @Override
-    public void run(ApplicationArguments args) {
-        // args.getOptionValues("key") 方便取参数
-    }
+// SmsProperties：配置属性
+@ConfigurationProperties(prefix = "sms")
+public class SmsProperties {
+    private String accessKey;
+    private String secretKey;
+    // getter/setter
 }
 
-// 多个 Runner 排序：
-@Component
-@Order(1)
-public class Runner1 implements CommandLineRunner { ... }
-```
-就绪事件
-```
-// ApplicationReadyEvent：应用完全就绪
-// 此时所有 Bean 创建完成，可以接收请求
+// SmsAutoConfiguration：自动配置类
+@AutoConfiguration
+@ConditionalOnClass(SmsSender.class)           // 有类才生效
+@EnableConfigurationProperties(SmsProperties.class)  // 绑定配置
+public class SmsAutoConfiguration {
 
-// 监听（初始化完成后的逻辑）：
-@Component
-public class ReadyListener {
-    @EventListener(ApplicationReadyEvent.class)
-    public void onReady() {
-        // 定时任务启动、预热
+    @Bean
+    @ConditionalOnMissingBean                    // 用户没自定义才创建
+    @ConditionalOnProperty(prefix = "sms", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public SmsSender smsSender(SmsProperties properties) {
+        return new SmsSender(properties.getAccessKey(), properties.getSecretKey());
     }
 }
 ```
-### 启动流程 vs Spring
-| 步骤     | 传统 Spring | Spring Boot     |
-| ------ | --------- | --------------- |
-| 配置     | XML 手动    | 自动配置            |
-| 容器     | 手动创建      | run() 自动        |
-| Web 容器 | 外部 Tomcat | 内嵌              |
-| 配置文件   | 多个 XML    | application.yml |
-| 启动     | 复杂        | 一行 main         |
+注册自动配置类
 ```
-面试官："Spring Boot 启动流程？"
+# META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
+com.example.sms.SmsAutoConfiguration
+```
+用户使用
+```
+<dependency>
+    <groupId>com.example</groupId>
+    <artifactId>sms-spring-boot-starter</artifactId>
+    <version>1.0.0</version>
+</dependency>
 
-"核心是 SpringApplication.run()：
-① 准备环境（加载 application.yml、系统属性）
-② 创建 ApplicationContext
-③ 准备上下文（加载初始化器、注册主类）
-④ 刷新上下文：执行 Spring 的 refresh()（自动配置在这里生效，
-   内嵌 Tomcat 在 onRefresh 启动）
-⑤ 执行 CommandLineRunner/ApplicationRunner
-⑥ 发布 ApplicationReadyEvent，应用就绪
+sms:
+  access-key: xxx
+  secret-key: xxx
 
-其中最关键的是刷新上下文那步，
-自动配置和 Bean 创建都在里面。"
+@Autowired
+private SmsSender smsSender;  // 自动注入 ✅
+
+smsSender.send("13800000000", "验证码 1234");
+```
+### Starter细节
+条件注解的完整组合
+```
+// 一个好的自动配置类应该：
+// ① @ConditionalOnClass：依赖存在才生效
+// ② @ConditionalOnMissingBean：用户可覆盖
+// ③ @ConditionalOnProperty：可开关
+// ④ @AutoConfiguration(before/after)：控制顺序
+```
+配置提示
+```
+<!-- 可选：生成配置元数据（IDE 写 yml 有提示） -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-configuration-processor</artifactId>
+    <optional>true</optional>
+</dependency>
+```
+常见问题
+```
+// ① 自动配置不生效：imports 文件路径/名字写错
+// ② 条件不满足：依赖没加
+// ③ 和用户 Bean 冲突：@ConditionalOnMissingBean
+// ④ 配置不提示：加 configuration-processor
 ```
 ### 面试高频题
-#### 题目1：@SpringBootApplication是什么
+#### 题目1：starter是什么？原理？
 ```
-// 组合注解：@SpringBootConfiguration + @EnableAutoConfiguration + @ComponentScan
+// 依赖 + 自动配置打包
+// 加依赖 → 自动配置类生效 → 创建 Bean
 ```
-#### 题目2：run()的核心流程是什么
+#### 题目2：怎么自定义starter
 ```
-// 环境 → 上下文 → 刷新 → Runner → 就绪
+// ① 核心类 + Properties
+// ② 自动配置类（条件注解）
+// ③ imports 文件注册
+// ④ 用户加依赖 + 配置即可
 ```
-#### 题目3：启动完之后怎么执行逻辑
+#### 题目3：starter和自动配置关系
 ```
-// CommandLineRunner / ApplicationRunner / @EventListener(ApplicationReadyEvent)
+// starter 提供依赖和自动配置
+// 自动配置是 starter 的核心
+// 没有 starter 也能手动加依赖 + 自动配置
 ```
-#### 题目4：自动配置在哪一步生效
+#### 题目4：为什么加依赖就生效
 ```
-// refresh() 的 invokeBeanFactoryPostProcessors 阶段
-// ConfigurationClassPostProcessor 处理 @EnableAutoConfiguration
+// @EnableAutoConfiguration 扫描 imports 文件
+// 条件注解判断（有依赖的类 → 生效）
 ```
-#### 题目5：内嵌tomcat什么时候启动
+#### 题目5：自动配置怎么被用户覆盖
 ```
-// refresh() 的 onRefresh() 阶段
-// WebServerFactory 创建 Tomcat 并启动
+// @ConditionalOnMissingBean：用户自定义了就不创建
+// 这是"约定大于配置 + 可覆盖"的关键
 ```
-#### 题目6：怎么拿到启动参数
-```
-// ApplicationRunner 的 ApplicationArguments
-// 或 @Value 注入
-```
+
